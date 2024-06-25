@@ -1,6 +1,9 @@
 #include <limits>
 
 #include <gflags/gflags.h>
+#include <sstream>
+#include <string>
+#include <iostream>
 
 #include "drake/common/eigen_types.h"
 #include "drake/common/find_resource.h"
@@ -43,8 +46,7 @@ using Eigen::VectorXd;
 DEFINE_double(target_realtime_rate, 1.0,
               "Playback speed.  See documentation for "
               "Simulator::set_target_realtime_rate() for details.");
-DEFINE_double(duration, std::numeric_limits<double>::infinity(),
-              "Simulation duration.");
+DEFINE_double(duration, 10.0, "Simulation duration.");
 DEFINE_string(setup, "manipulation_class",
               "Manipulation station type to simulate. "
               "Can be {manipulation_class, clutter_clearing}");
@@ -54,6 +56,30 @@ DEFINE_bool(publish_point_cloud, false,
             "Whether to publish point clouds to LCM.  Note that per issue "
             "https://github.com/RobotLocomotion/drake/issues/12125 the "
             "simulated point cloud data will have registration errors.");
+DEFINE_string(iiwa_starting_position, "",
+              "A comma-separated list of seven joint angles (in radians) "
+              "to set the starting position of the iiwa arm. "
+              "If empty, the default starting position is used.");
+  
+VectorXd parse_starting_position(const std::string& flag_value) {
+  VectorXd starting_position(7);
+  if (flag_value.empty()) {
+    starting_position << 0, 0, 0, 0, 0, 0, 0;  // default starting position
+  } else {
+    std::istringstream iss(flag_value);
+    std::string token;
+    int i = 0;
+    while (std::getline(iss, token, ',') && i < 7) {
+      starting_position[i++] = std::stod(token);
+    }
+    if (i != 7) {
+      throw std::runtime_error("Invalid iiwa_starting_position flag value. "
+                               "Exactly 7 joint angles are required.");
+    }
+  }
+  return starting_position;
+}
+
 
 int do_main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -83,6 +109,7 @@ int do_main(int argc, char* argv[]) {
   // #9747.
   station->Finalize();
 
+  
   geometry::DrakeVisualizerd::AddToBuilder(
       &builder, station->GetOutputPort("query_object"));
 
@@ -197,9 +224,36 @@ int do_main(int argc, char* argv[]) {
   auto diagram = builder.Build();
 
   systems::Simulator<double> simulator(*diagram);
-  simulator.set_publish_every_time_step(false);
-  simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
-  simulator.AdvanceTo(FLAGS_duration);
+  // Set the initial starting position if provided via command-line flag
+  if (!FLAGS_iiwa_starting_position.empty()) {
+    VectorXd starting_position = parse_starting_position(FLAGS_iiwa_starting_position);
+    auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
+    station->SetIiwaPosition(&station_context, starting_position);
+  }
+
+  while (true) {
+    // Prompt the user for a new starting position
+    std::string input_str;
+    std::cout << "Enter a comma-separated list of seven joint angles (in radians) for the new starting position, or 'exit' to quit:" << std::endl;
+    std::getline(std::cin, input_str);
+
+    // Check if the user wants to exit
+    if (input_str == "exit") {
+      break;
+    }
+
+    // Parse the user input and set the new starting position
+    VectorXd new_starting_position = parse_starting_position(input_str);
+    auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
+    station->SetIiwaPosition(&station_context, new_starting_position);
+
+    // Reset the simulator with the new initial conditions
+    simulator.Initialize();
+    simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
+
+    // Run the simulation for the specified duration or until the user decides to stop
+    simulator.AdvanceTo(FLAGS_duration);
+  }
 
   return 0;
 }
