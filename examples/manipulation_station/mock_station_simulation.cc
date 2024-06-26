@@ -30,6 +30,8 @@
 #include "drake/systems/lcm/lcm_subscriber_system.h"
 #include "drake/systems/primitives/matrix_gain.h"
 #include "drake/systems/sensors/image_to_lcm_image_array_t.h"
+#include "drake/systems/primitives/trajectory_source.h"
+#include "drake/common/trajectories/piecewise_polynomial.h"
 
 namespace drake {
 namespace examples {
@@ -42,6 +44,10 @@ namespace {
 // simulation to operating on the real robot hardware.
 
 using Eigen::VectorXd;
+using Eigen::MatrixXd;
+using drake::trajectories::PiecewisePolynomial;
+using drake::trajectories::Trajectory;
+using drake::systems::TrajectorySource;
 
 DEFINE_double(target_realtime_rate, 1.0,
               "Playback speed.  See documentation for "
@@ -107,6 +113,28 @@ int do_main(int argc, char* argv[]) {
   }
   // TODO(russt): Load sdf objects specified at the command line.  Requires
   // #9747.
+
+  VectorXd pose_start(7); // Define the starting pose
+  VectorXd pose_end(7);   // Define the ending pose
+  pose_start << 0, -1, 0, -2, 0, 2, 0;
+  pose_end << 0, .5, 0, -2.25, 0, -1, 0;
+
+  // Create a vector of times at which the poses are defined.
+  std::vector<double> times = {0.0, FLAGS_duration};  // Start and end times
+
+  // Create a vector of Eigen vectors (poses) for the trajectory.
+  std::vector<MatrixXd> poses;
+  poses.push_back(pose_start);
+  poses.push_back(pose_end);
+  
+
+  // Create a PiecewisePolynomial trajectory from the given poses and times.
+  auto trajectory = PiecewisePolynomial<double>::FirstOrderHold(times, poses);
+
+  // Create a TrajectorySource system that outputs the trajectory.
+  auto trajectory_source = builder.AddSystem<drake::systems::TrajectorySource<double>>(trajectory);
+
+
   station->Finalize();
 
   
@@ -125,11 +153,11 @@ int do_main(int argc, char* argv[]) {
   builder.Connect(station->GetOutputPort("iiwa_position_measured"),
                   iiwa_command->get_position_measured_input_port());
 
-  // Pull the positions out of the state.
-  builder.Connect(iiwa_command->get_commanded_position_output_port(),
-                  station->GetInputPort("iiwa_position"));
-  builder.Connect(iiwa_command->get_commanded_torque_output_port(),
-                  station->GetInputPort("iiwa_feedforward_torque"));
+  // // Pull the positions out of the state.
+  // builder.Connect(iiwa_command->get_commanded_position_output_port(),
+  //                 station->GetInputPort("iiwa_position"));
+  // builder.Connect(iiwa_command->get_commanded_torque_output_port(),
+  //                 station->GetInputPort("iiwa_feedforward_torque"));
 
   auto iiwa_status =
       builder.AddSystem<manipulation::kuka_iiwa::IiwaStatusSender>();
@@ -221,39 +249,46 @@ int do_main(int argc, char* argv[]) {
     }
   }
 
+  builder.Connect(trajectory_source->get_output_port(),
+                station->GetInputPort("iiwa_position"));
+
   auto diagram = builder.Build();
 
   systems::Simulator<double> simulator(*diagram);
-  // Set the initial starting position if provided via command-line flag
-  if (!FLAGS_iiwa_starting_position.empty()) {
+//   Set the initial starting position if provided via command-line flag
+  if(!FLAGS_iiwa_starting_position.empty()) {
     VectorXd starting_position = parse_starting_position(FLAGS_iiwa_starting_position);
     auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
     station->SetIiwaPosition(&station_context, starting_position);
   }
 
-  while (true) {
-    // Prompt the user for a new starting position
-    std::string input_str;
-    std::cout << "Enter a comma-separated list of seven joint angles (in radians) for the new starting position, or 'exit' to quit:" << std::endl;
-    std::getline(std::cin, input_str);
+  simulator.Initialize();
+  simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
+  simulator.AdvanceTo(FLAGS_duration);
 
-    // Check if the user wants to exit
-    if (input_str == "exit") {
-      break;
-    }
+  // while (true) {
+  //   // Prompt the user for a new starting position
+  //   std::string input_str;
+  //   std::cout << "Enter a comma-separated list of seven joint angles (in radians) for the new starting position, or 'exit' to quit:" << std::endl;
+  //   std::getline(std::cin, input_str);
 
-    // Parse the user input and set the new starting position
-    VectorXd new_starting_position = parse_starting_position(input_str);
-    auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
-    station->SetIiwaPosition(&station_context, new_starting_position);
+  //   // Check if the user wants to exit
+  //   if (input_str == "exit") {
+  //     break;
+  //   }
 
-    // Reset the simulator with the new initial conditions
-    simulator.Initialize();
-    simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
+  //   // Parse the user input and set the new starting position
+  //   VectorXd new_starting_position = parse_starting_position(input_str);
+  //   auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
+  //   station->SetIiwaPosition(&station_context, new_starting_position);
 
-    // Run the simulation for the specified duration or until the user decides to stop
-    simulator.AdvanceTo(FLAGS_duration);
-  }
+  //   // Reset the simulator with the new initial conditions
+  //   simulator.Initialize();
+  //   simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
+
+  //   // Run the simulation for the specified duration or until the user decides to stop
+  //   simulator.AdvanceTo(FLAGS_duration);
+  // }
 
   return 0;
 }
