@@ -1,0 +1,94 @@
+
+load("//tools/lint:lint.bzl", "add_lint_tests")
+load(
+    "//tools/skylark:drake_cc.bzl",
+    "drake_cc_binary",
+    "drake_cc_googletest",
+    "drake_cc_library",
+)
+load(
+    "//tools/skylark:drake_py.bzl",
+    "drake_py_unittest",
+)
+
+package(default_visibility = ["//visibility:private"])
+
+drake_cc_binary(
+    name = "jakes_iiwa_sim",
+    srcs = ["jakes_iiwa_sim.cc"],
+    data = [
+        ":jakes_iiwa_sdf",
+        # other data dependencies...
+    ],
+    deps = [
+        "//common:essential",
+        "//systems/analysis:simulator",
+        "//systems/framework:diagram_builder",
+        "//systems/framework:leaf_system",
+        "//systems/lcm:lcm_interface_system",
+        "//systems/lcm:lcm_publisher_system",
+        "//systems/lcm:lcm_subscriber_system",
+        "//systems/primitives:demultiplexer",
+        "//systems/primitives:discrete_derivative",
+        "//systems/controllers:inverse_dynamics_controller",
+        "//systems/controllers:state_feedback_controller_interface",
+        "//multibody/plant",
+        "//multibody/parsing:parser",
+        "//geometry:scene_graph",
+        "//visualization",
+        "//common:add_text_logging_gflags",
+        "//lcmtypes:iiwa", 
+    ],
+)
+
+drake_cc_binary(
+    name = "jakes_acrobot_sim",
+    srcs = ["jakes_acrobot_sim.cc"],
+    data = [
+        ":jakes_acrobot_sdf",
+        # other data dependencies...
+    ],
+    deps = [
+        #"//common:essential",
+        "//systems/analysis:simulator",
+        "//systems/framework:diagram_builder",
+        "//systems/framework:leaf_system",
+        "//systems/lcm:lcm_interface_system",
+        #"//systems/lcm:lcm_publisher_system",
+        #"//systems/lcm:lcm_subscriber_system",
+        "//systems/primitives:demultiplexer",
+        "//systems/primitives:multiplexer",
+        "//systems/primitives:matrix_gain",
+        "//systems/primitives:constant_vector_source",
+        #"//systems/primitives:discrete_derivative",
+        #"//systems/controllers:inverse_dynamics_controller",
+        #"//systems/controllers:state_feedback_controller_interface",
+        "//multibody/plant",
+        "//multibody/parsing:parser",
+        "//geometry:scene_graph",
+        "//visualization",
+        "//common:add_text_logging_gflags",
+        #"//lcmtypes:iiwa",
+        "//systems/primitives:vector_log_sink",
+        #"//multibody/plant:multibody_element",
+        "//solvers:mathematical_program",
+        "//solvers:solve",
+        "//multibody/inverse_kinematics:inverse_kinematics",
+        "//common/trajectories:trajectory",
+        "//common/trajectories:piecewise_polynomial",
+    ],
+)
+
+# Define a filegroup for the SDF file
+filegroup(
+    name = "jakes_iiwa_sdf",
+    srcs = ["jakes_iiwa.sdf"],
+    visibility = ["//visibility:public"],
+)
+
+# Define a filegroup for the SDF file
+filegroup(
+    name = "jakes_acrobot_sdf",
+    srcs = ["jakes_acrobot.sdf"],
+    visibility = ["//visibility:public"],
+)
