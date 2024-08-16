@@ -32,6 +32,7 @@
 #include "drake/systems/sensors/image_to_lcm_image_array_t.h"
 #include "drake/systems/primitives/trajectory_source.h"
 #include "drake/common/trajectories/piecewise_polynomial.h"
+#include "drake/multibody/optimization/toppra.h"
 
 namespace drake {
 namespace examples {
@@ -48,6 +49,7 @@ using Eigen::MatrixXd;
 using drake::trajectories::PiecewisePolynomial;
 using drake::trajectories::Trajectory;
 using drake::systems::TrajectorySource;
+using drake::multibody::Toppra;
 
 DEFINE_double(target_realtime_rate, 1.0,
               "Playback speed.  See documentation for "
@@ -114,10 +116,14 @@ int do_main(int argc, char* argv[]) {
   // TODO(russt): Load sdf objects specified at the command line.  Requires
   // #9747.
 
-  VectorXd pose_start(7); // Define the starting pose
-  VectorXd pose_end(7);   // Define the ending pose
-  pose_start << 0, -1, 0, -2, 0, 2, 0;
-  pose_end << 0, .5, 0, -2.25, 0, -1, 0;
+  // VectorXd pose_start(7); // Define the starting pose
+  // VectorXd pose_end(7);   // Define the ending pose
+  // pose_start << 0, -1, 0, -2, 0, 2, 0;
+  // pose_end << 0, .5, 0, -2.25, 0, -1, 0;
+  VectorXd pose_start(18); // Define the starting pose
+  VectorXd pose_end(18); // Define the ending pose
+  pose_start << 0, 0, 0, -1, 0, -2, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  pose_end << 0, 0, 0, .5, 0, -2.25, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
 
   // Create a vector of times at which the poses are defined.
   std::vector<double> times = {0.0, FLAGS_duration};  // Start and end times
@@ -129,13 +135,45 @@ int do_main(int argc, char* argv[]) {
   
 
   // Create a PiecewisePolynomial trajectory from the given poses and times.
-  auto trajectory = PiecewisePolynomial<double>::FirstOrderHold(times, poses);
+  auto trajectory_first_pass = PiecewisePolynomial<double>::FirstOrderHold(times, poses);
 
-  // Create a TrajectorySource system that outputs the trajectory.
-  auto trajectory_source = builder.AddSystem<drake::systems::TrajectorySource<double>>(trajectory);
-
+  
 
   station->Finalize();
+
+  // Calculate grid points for the trajectory discretization.
+  drake::multibody::CalcGridPointsOptions options;
+  auto& plant = station->get_multibody_plant();
+  const auto gridpoints = Toppra::CalcGridPoints(trajectory_first_pass, options);
+  std::cout << "Path rows " << trajectory_first_pass.rows() << '\n';
+  std::cout << "Plant.num_postitions " << plant.num_positions() << '\n';
+  // std::cout << "Plant actuator names " << plant.GetPositionNames();
+  std::cout << "Plant position names: ";
+  const auto& position_names = plant.GetPositionNames();
+  for (const auto& name : position_names) {
+    std::cout << name << '\n';
+  }
+  std::cout << std::endl;
+
+  Toppra toppra(trajectory_first_pass, plant, gridpoints);
+
+  VectorXd lower_velocity_limit = VectorXd::Constant(plant.num_positions(), -1.0);
+  VectorXd upper_velocity_limit = VectorXd::Constant(plant.num_positions(), 1.0);
+  toppra.AddJointVelocityLimit(lower_velocity_limit, upper_velocity_limit);
+
+  auto optimized_trajectory = toppra.SolvePathParameterization();
+
+  // Create a TrajectorySource system that outputs the trajectory.
+  if (optimized_trajectory) {
+    // Create a TrajectorySource system that outputs the trajectory.
+    auto trajectory_source = builder.AddSystem<drake::systems::TrajectorySource<double>>(*optimized_trajectory);
+    builder.Connect(trajectory_source->get_output_port(), station->GetInputPort("iiwa_position"));
+  } else {
+    // Handle the case when the optimization fails.
+    std::cerr << "TOPPRA optimization failed." << std::endl;
+    return 1;
+  }
+
 
   
   geometry::DrakeVisualizerd::AddToBuilder(
@@ -153,11 +191,6 @@ int do_main(int argc, char* argv[]) {
   builder.Connect(station->GetOutputPort("iiwa_position_measured"),
                   iiwa_command->get_position_measured_input_port());
 
-  // // Pull the positions out of the state.
-  // builder.Connect(iiwa_command->get_commanded_position_output_port(),
-  //                 station->GetInputPort("iiwa_position"));
-  // builder.Connect(iiwa_command->get_commanded_torque_output_port(),
-  //                 station->GetInputPort("iiwa_feedforward_torque"));
 
   auto iiwa_status =
       builder.AddSystem<manipulation::kuka_iiwa::IiwaStatusSender>();
@@ -249,46 +282,31 @@ int do_main(int argc, char* argv[]) {
     }
   }
 
-  builder.Connect(trajectory_source->get_output_port(),
-                station->GetInputPort("iiwa_position"));
+  // builder.Connect(trajectory_source->get_output_port(),
+  //               station->GetInputPort("iiwa_position"));
 
   auto diagram = builder.Build();
 
   systems::Simulator<double> simulator(*diagram);
 //   Set the initial starting position if provided via command-line flag
+  auto context = station->CreateDefaultContext();
   if(!FLAGS_iiwa_starting_position.empty()) {
     VectorXd starting_position = parse_starting_position(FLAGS_iiwa_starting_position);
     auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
     station->SetIiwaPosition(&station_context, starting_position);
   }
+  VectorXd default_positions = plant.GetPositions(*context);
+  std::cout << "Plant positions: ";
+  for (const auto& position : default_positions) {
+    std::cout << position << '\n';
+  }
+  std::cout << std::endl;
 
   simulator.Initialize();
   simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
   simulator.AdvanceTo(FLAGS_duration);
 
-  // while (true) {
-  //   // Prompt the user for a new starting position
-  //   std::string input_str;
-  //   std::cout << "Enter a comma-separated list of seven joint angles (in radians) for the new starting position, or 'exit' to quit:" << std::endl;
-  //   std::getline(std::cin, input_str);
 
-  //   // Check if the user wants to exit
-  //   if (input_str == "exit") {
-  //     break;
-  //   }
-
-  //   // Parse the user input and set the new starting position
-  //   VectorXd new_starting_position = parse_starting_position(input_str);
-  //   auto& station_context = diagram->GetMutableSubsystemContext(*station, &simulator.get_mutable_context());
-  //   station->SetIiwaPosition(&station_context, new_starting_position);
-
-  //   // Reset the simulator with the new initial conditions
-  //   simulator.Initialize();
-  //   simulator.set_target_realtime_rate(FLAGS_target_realtime_rate);
-
-  //   // Run the simulation for the specified duration or until the user decides to stop
-  //   simulator.AdvanceTo(FLAGS_duration);
-  // }
 
   return 0;
 }

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <forward_list>
 #include <limits>
+#include <iostream>
 
 #include "drake/solvers/choose_best_solver.h"
 #include "drake/solvers/clp_solver.h"
@@ -507,7 +508,24 @@ std::optional<Eigen::Matrix2Xd> Toppra::ComputeBackwardPass(
       backward_cost_.evaluator()->UpdateCoefficients(min_cost_A);
       solvers::MathematicalProgramResult result;
       solver.Solve(*backward_prog_, {}, {}, &result);
+
+      std::cout << "Knot " << knot << ":\n";
+      for (const auto& [constraint, bounds] : x_bounds_) {
+        std::cout << "Lower bound: " << bounds.lb(knot) << ", Upper bound: " << bounds.ub(knot) << "\n";
+      }
+
+      std::cout << "Decision Variables at knot " << knot << ":\n";
+      for (const auto& var : backward_prog_->decision_variables()) {
+        std::cout << "Variable " << var.get_id() << " - " << var.get_name();
+                  // << " with bounds [" << var.lower_bound() << ", " << var.upper_bound() << "]\n";
+      }
+
+      std::cout << backward_prog_->to_string() << std::endl;
+      
+
+
       if (!result.is_success()) {
+
         drake::log()->error(
             fmt::format("Toppra failed to find lower bound of controllable set "
                         "at knot {}/{}.",

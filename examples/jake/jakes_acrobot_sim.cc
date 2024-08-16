@@ -23,6 +23,7 @@
 #include "drake/multibody/inverse_kinematics/inverse_kinematics.h"
 #include "drake/solvers/solve.h"
 #include "drake/solvers/mathematical_program.h"
+#include "drake/multibody/optimization/toppra.h"
 
 
 DEFINE_double(simulation_sec, std::numeric_limits<double>::infinity(),
@@ -44,6 +45,7 @@ using multibody::MultibodyPlant;
 using multibody::PackageMap;
 using systems::Simulator;
 using drake::trajectories::PiecewisePolynomial;
+using drake::multibody::Toppra;
 
 
 class PdController : public drake::systems::VectorSystem<double> {
@@ -94,16 +96,38 @@ class PdController : public drake::systems::VectorSystem<double> {
     const double control_2 = kp_2 * q_error_2 + kd_2 * v_error_2;
     // std::cout << "AAAAAAA\n";
 
-    // std::cout << "Control!!!" << control_1 << "Control_2 " << control_2 << '\n';std::cout << "q_error_1 " << q_error_1 << " q_error_2 " << q_error_2 << '\n';
-    // std::cout << "input[0] " << input[0] << " input[1] " << input[1] << "input[2] " << input[2] << " input[3] " << input[3] << '\n';
+    std::cout << "Control!!!" << control_1 << "Control_2 " << control_2 << '\n';
+    // std::cout << "q_error_1 " << q_error_1 << " q_error_2 " << q_error_2 << '\n';
+    std::cout << "input[0] " << input[0] << " input[1] " << input[1] << "input[2] " << input[2] << " input[3] " << input[3] << '\n';
     // std::cout << "q_error_1 " << q_error_1 << " q_error_2 " << q_error_2 << '\n';
     // std::cout << "v_error_1 " << v_error_1 << " v_error_2 " << v_error_2 << "\n\n";
     // std::cout << "q_desired_1 " << q_desired_1 << " q_desired_2 " << q_desired_2 << '\n';
 
 
     // Write the control signal to the output vector.
-    (*output)[0] = control_1;
-    (*output)[1] = control_2;
+    if (control_1 < -5){
+      (*output)[0] = -5;
+    }
+    else if (control_1 > 5){
+      (*output)[0] = 5;
+    }
+    else{
+      (*output)[0] = control_1;
+      std::cout << "c1\n";
+    }
+
+    if (control_2 < -5){
+      (*output)[1] = -5;
+    }
+    else if (control_2 > 5){
+      (*output)[1] = 5;
+    }
+    else{
+      (*output)[1] = control_2;
+      std::cout << "c2\n";
+    }
+    // (*output)[0] = control_1;
+    // (*output)[1] = control_2;
   }
 
   
@@ -181,7 +205,7 @@ int DoMain() {
 
   // Define the start and end times for the trajectory.
   // double start_time = 0.0;  // Start at time t = 0
-  double end_time = 10.0;   // End at time t = 10, for example
+  double end_time = 3.0;   // End at time t = 10, for example
   // Create a vector of times corresponding to each waypoint.
 
   int num_steps = 10; // For example, change this to the desired number of steps.
@@ -229,22 +253,22 @@ int DoMain() {
     drake::multibody::InverseKinematics ik(plant);
     // Evaluate the desired end-effector position at time t.
     Eigen::VectorXd desired_position = linear_trajectory.value(t);
-    std::cout << "q_nominal: [";
-    for (int i = 0; i < q_nominal.size(); ++i) {
-      std::cout << q_nominal[i];
-      if (i < q_nominal.size() - 1) {
-        std::cout << ", ";
-      }
-    }
-    std::cout << "]\n"; 
-    std::cout << "desired_position: [";
-    for (int i = 0; i < desired_position.size(); ++i) {
-      std::cout << desired_position[i];
-      if (i < desired_position.size() - 1) {
-        std::cout << ", ";
-      }
-    }
-    std::cout << "]\n"; 
+    // std::cout << "q_nominal: [";
+    // for (int i = 0; i < q_nominal.size(); ++i) {
+    //   std::cout << q_nominal[i];
+    //   if (i < q_nominal.size() - 1) {
+    //     std::cout << ", ";
+    //   }
+    // }
+    // std::cout << "]\n"; 
+    // std::cout << "desired_position: [";
+    // for (int i = 0; i < desired_position.size(); ++i) {
+    //   std::cout << desired_position[i];
+    //   if (i < desired_position.size() - 1) {
+    //     std::cout << ", ";
+    //   }
+    // }
+    // std::cout << "]\n"; 
 
 
 
@@ -273,31 +297,31 @@ int DoMain() {
           joint_angles = result.GetSolution(ik.q());
           int n_0 = std::floor((M_PI - joint_angles[0] + q_nominal[0])/(2 * M_PI));
           int n_1 = std::floor((M_PI - joint_angles[1] + q_nominal[1])/(2 * M_PI));
-          std::cout << "Joint angles try: [";
-          for (int i = 0; i < joint_angles.size(); ++i) {
-            std::cout << joint_angles[i];
-            if (i < joint_angles.size() - 1) {
-              std::cout << ", ";
-            }
-          }
-          std::cout << "],   n [" << n_0 << ", " << n_1 << '\n';
-          std::cout << "q_nominal: [";
-          for (int i = 0; i < q_nominal.size(); ++i) {
-            std::cout << q_nominal[i];
-            if (i < q_nominal.size() - 1) {
-              std::cout << ", ";
-            }
-          }
-          std::cout << "]\n"; 
+          // std::cout << "Joint angles try: [";
+          // for (int i = 0; i < joint_angles.size(); ++i) {
+          //   std::cout << joint_angles[i];
+          //   if (i < joint_angles.size() - 1) {
+          //     std::cout << ", ";
+          //   }
+          // }
+          // std::cout << "],   n [" << n_0 << ", " << n_1 << '\n';
+          // std::cout << "q_nominal: [";
+          // for (int i = 0; i < q_nominal.size(); ++i) {
+          //   std::cout << q_nominal[i];
+          //   if (i < q_nominal.size() - 1) {
+          //     std::cout << ", ";
+          //   }
+          // }
+          // std::cout << "]\n"; 
           if ((n_0 == 0) && (n_1 == 0)){
             satisfactory = true;
-            std::cout << "true\n";
+            // std::cout << "true\n";
             break;
           }
           else{
             q_nominal << 2 * M_PI * n_0 + joint_angles[0], 2 * M_PI * n_1 + joint_angles[1];
             ik.get_mutable_prog()->SetInitialGuess(ik.q(), q_nominal);
-            std::cout << "false\n";
+            // std::cout << "false\n";
           }
       }
       else{
@@ -309,14 +333,14 @@ int DoMain() {
     if (satisfactory) {
       // Extract the joint angles from the solution.
       joint_angles_trajectory.push_back(joint_angles);
-      std::cout << "Joint angles: [";
-      for (int i = 0; i < joint_angles.size(); ++i) {
-        std::cout << joint_angles[i];
-        if (i < joint_angles.size() - 1) {
-          std::cout << ", ";
-        }
-      }
-      std::cout << "]\n"; 
+      // std::cout << "Joint angles: [";
+      // for (int i = 0; i < joint_angles.size(); ++i) {
+      //   std::cout << joint_angles[i];
+      //   if (i < joint_angles.size() - 1) {
+      //     std::cout << ", ";
+      //   }
+      // }
+      // std::cout << "]\n"; 
       q_nominal = joint_angles;
     } else {
       // Handle the case where the IK solution was not successful.
@@ -334,8 +358,63 @@ int DoMain() {
     drake::trajectories::PiecewisePolynomial<double>::FirstOrderHold(
         times, joint_angles_trajectory);
 
-  
+  int num_waypoints = joint_angles_trajectory.size();
+  // Step 1: Create the path as a Trajectory<double> object.
+  Eigen::VectorXd s_values(num_waypoints);
+  for (int i = 0; i < num_waypoints; ++i) {
+    s_values(i) = static_cast<double>(i) / (num_waypoints - 1);  // This will create a vector from 0 to 1.
+  }
 
+  // Convert waypoints to a matrix for PiecewisePolynomial.
+  Eigen::MatrixXd waypoints_matrix(joint_angles_trajectory[0].size(), num_waypoints);
+  for (int i = 0; i < num_waypoints; ++i) {
+    waypoints_matrix.col(i) = joint_angles_trajectory[i];
+  }
+
+  // Create a PiecewisePolynomial using a cubic spline interpolation.
+  auto q_s = drake::trajectories::PiecewisePolynomial<double>::CubicShapePreserving(
+      s_values, waypoints_matrix);
+
+
+
+
+  // Step 2: Calculate grid points.
+  drake::multibody::CalcGridPointsOptions grid_options;
+  grid_options.max_err = 1e-3; // Example value, adjust as needed.
+  grid_options.max_iter = 100; // Example value, adjust as needed.
+  grid_options.max_seg_length = 0.05; // Example value, adjust as needed.
+  grid_options.min_points = 100; // Example value, adjust as needed.
+  Eigen::VectorXd gridpoints = Toppra::CalcGridPoints(joint_angles_trajectory_poly, grid_options);
+
+  // Step 3: Instantiate the Toppra class.
+  drake::multibody::Toppra toppra(joint_angles_trajectory_poly, plant, gridpoints);
+
+  // Step 4: Add constraints.
+  Eigen::VectorXd joint_velocity_lower_limit(plant.num_velocities());
+  Eigen::VectorXd joint_velocity_upper_limit(plant.num_velocities());
+  joint_velocity_lower_limit << -10, -10;
+  joint_velocity_upper_limit << 10, 10;
+  // ... Set your joint velocity limits ...
+  toppra.AddJointVelocityLimit(joint_velocity_lower_limit, joint_velocity_upper_limit);
+
+  Eigen::VectorXd joint_torque_lower_limit(plant.num_velocities());
+  Eigen::VectorXd joint_torque_upper_limit(plant.num_velocities());
+  joint_torque_lower_limit << -5, -5;
+  joint_torque_upper_limit << 5, 5;
+  // ... Set your joint acceleration limits ...
+  toppra.AddJointTorqueLimit(joint_torque_lower_limit, joint_torque_upper_limit);
+
+  // ... Add more constraints as needed ...
+
+  // Step 5: Solve the optimization problem.
+  std::optional<PiecewisePolynomial<double>> new_joint_angles_poly = toppra.SolvePathParameterization();
+
+  // ... [Rest of your code] ...
+
+  // Use s_dot_optimized to create a time-parameterized trajectory q(t) if optimization succeeded.
+  if (!new_joint_angles_poly) {
+    std::cerr << "Toppra pooped\n";
+  }
       
 
     // Add a PD controller to the system.
@@ -363,7 +442,16 @@ int DoMain() {
 
 
   // Set the trajectory for the PD controller.
-  pd_controller->SetDesiredTrajectory(joint_angles_trajectory_poly);
+  if (new_joint_angles_poly) {
+    // If it does, dereference it and pass it to SetDesiredTrajectory
+    pd_controller->SetDesiredTrajectory(*new_joint_angles_poly);
+  } else {
+    // Handle the case where new_joint_angles_poly does not contain a value
+    // This might include logging an error, throwing an exception, or other error handling
+    std::cerr << "Toppra optimization failed to produce a trajectory." << std::endl;
+    return 1; // Return a non-zero value to indicate failure
+  }
+
 
 
   Simulator<double> simulator(*sys);
@@ -398,7 +486,7 @@ int DoMain() {
   // plant.get_applied_spatial_force_input_port().template FixValue<std::vector<drake::multibody::ExternallyAppliedSpatialForce<double>>>(&plant_context, {external_force});
 
   // Run the simulation for 1 second to apply the force.
-  simulator.AdvanceTo(15.0);
+  simulator.AdvanceTo(20.0);
 
 
 
